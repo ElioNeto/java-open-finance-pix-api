@@ -8,13 +8,19 @@ import com.elioneto.pixapi.model.PixStatus;
 import com.elioneto.pixapi.service.PixPaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -31,20 +37,34 @@ public class PixPaymentController {
 
     private final PixPaymentService pixPaymentService;
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasRole('USER')")
     @Operation(
             summary = "Iniciar pagamento Pix",
-            description = "Cria uma nova transação Pix e publica evento no Kafka para processamento assíncrono pelo SPI do Banco Central."
+            description = "Cria uma nova transação Pix e publica evento no Kafka para processamento assíncrono pelo SPI do Banco Central. " +
+                    "Suporta idempotência via header 'Idempotency-Key', garantindo que o mesmo pagamento não seja criado duas vezes.",
+            security = {@SecurityRequirement(name = "bearer-jwt")}
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Pagamento criado com status PENDING"),
+            @ApiResponse(responseCode = "201", description = "Pagamento criado com status PENDING",
+                    content = @Content(schema = @Schema(implementation = PixPaymentResponse.class))),
             @ApiResponse(responseCode = "400", description = "Dados inválidos — chave Pix vazia ou valor negativo"),
-            @ApiResponse(responseCode = "401", description = "Token JWT ausente ou inválido")
+            @ApiResponse(responseCode = "401", description = "Token JWT ausente ou inválido"),
+            @ApiResponse(responseCode = "429", description = "Rate limit excedido para o usuário/chave informada"),
+            @ApiResponse(responseCode = "500", description = "Erro interno ao processar o pagamento")
     })
     public ResponseEntity<PixPaymentResponse> createPayment(
-            @Valid @RequestBody CreatePixRequest request) {
-        log.info("POST /pix/payments - pixKey={}, amount={}", request.getPixKey(), request.getAmount());
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    required = true,
+                    description = "Dados para criação do pagamento Pix",
+                    content = @Content(schema = @Schema(implementation = CreatePixRequest.class))
+            )
+            @Valid @RequestBody CreatePixRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false)
+            @Parameter(description = "Chave idempotente para evitar criação duplicada de pagamentos. Se a mesma chave for reutilizada, a API retorna a mesma transação previamente criada.",
+                    example = "demonstracao-12345") String idempotencyKeyHeader
+    ) {
+        log.info("POST /pix/payments - pixKey={}, amount={}, idemKey={}", request.getPixKey(), request.getAmount(), idempotencyKeyHeader);
         return ResponseEntity.status(HttpStatus.CREATED).body(pixPaymentService.createPayment(request));
     }
 
@@ -53,7 +73,8 @@ public class PixPaymentController {
     @Operation(
             summary = "Listar transações Pix",
             description = "Retorna todas as transações Pix ordenadas da mais recente para a mais antiga. " +
-                    "Use o parâmetro `status` para filtrar: PENDING, PROCESSING, COMPLETED ou FAILED."
+                    "Use o parâmetro `status` para filtrar: PENDING, PROCESSING, COMPLETED ou FAILED.",
+            security = {@SecurityRequirement(name = "bearer-jwt")}
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso"),
@@ -71,7 +92,8 @@ public class PixPaymentController {
     @Operation(
             summary = "Consultar pagamento Pix por ID",
             description = "Retorna os detalhes completos de uma transação. " +
-                    "Estados possíveis: PENDING → PROCESSING → COMPLETED / FAILED"
+                    "Estados possíveis: PENDING → PROCESSING → COMPLETED / FAILED",
+            security = {@SecurityRequirement(name = "bearer-jwt")}
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Pagamento encontrado"),
@@ -90,7 +112,8 @@ public class PixPaymentController {
             summary = "Histórico de status da transação",
             description = "Retorna o histórico completo de mudanças de status de uma transação Pix em ordem cronológica. " +
                     "Cada entrada mostra o status, a origem da mudança e o timestamp. " +
-                    "Fontes possíveis: TPP_INITIATION, KAFKA_CONSUMER, SPI_BANCO_CENTRAL, WEBHOOK_CALLBACK."
+                    "Fontes possíveis: TPP_INITIATION, KAFKA_CONSUMER, SPI_BANCO_CENTRAL, WEBHOOK_CALLBACK.",
+            security = {@SecurityRequirement(name = "bearer-jwt")}
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Histórico retornado com sucesso"),
