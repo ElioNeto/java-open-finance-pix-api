@@ -2,14 +2,17 @@ package com.elioneto.pixapi.service;
 
 import com.elioneto.pixapi.dto.CreatePixRequest;
 import com.elioneto.pixapi.dto.PixPaymentResponse;
+import com.elioneto.pixapi.dto.PixPaymentStatusLogResponse;
 import com.elioneto.pixapi.dto.PixPaymentSummaryResponse;
 import com.elioneto.pixapi.dto.WebhookRequest;
 import com.elioneto.pixapi.exception.PixPaymentNotFoundException;
 import com.elioneto.pixapi.kafka.PixEvent;
 import com.elioneto.pixapi.kafka.PixPaymentProducer;
 import com.elioneto.pixapi.model.PixPayment;
+import com.elioneto.pixapi.model.PixPaymentStatusLog;
 import com.elioneto.pixapi.model.PixStatus;
 import com.elioneto.pixapi.repository.PixPaymentRepository;
+import com.elioneto.pixapi.repository.PixPaymentStatusLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,7 @@ public class PixPaymentService {
 
     private final PixPaymentRepository pixPaymentRepository;
     private final PixPaymentProducer pixPaymentProducer;
+    private final PixPaymentStatusLogRepository statusLogRepository;
 
     @Transactional
     public PixPaymentResponse createPayment(CreatePixRequest request) {
@@ -42,6 +46,9 @@ public class PixPaymentService {
 
         payment = pixPaymentRepository.save(payment);
 
+        // Registra log inicial
+        saveStatusLog(payment.getId(), PixStatus.PENDING, "TPP_INITIATION");
+
         PixEvent event = PixEvent.builder()
                 .paymentId(payment.getId())
                 .pixKey(payment.getPixKey())
@@ -49,8 +56,6 @@ public class PixPaymentService {
                 .description(payment.getDescription())
                 .build();
 
-        // Publica evento no Kafka para processamento assíncrono
-        // Isso simula o padrão Open Finance: TPP inicia, SPI processa
         pixPaymentProducer.sendPixEvent(event);
 
         log.info("Pix payment created and Kafka event published: id={}", payment.getId());
@@ -79,6 +84,25 @@ public class PixPaymentService {
         return toResponse(payment);
     }
 
+    @Transactional(readOnly = true)
+    public List<PixPaymentStatusLogResponse> getStatusLogs(UUID id) {
+        log.info("Fetching status logs for paymentId={}", id);
+
+        // Valida se pagamento existe
+        if (!pixPaymentRepository.existsById(id)) {
+            throw new PixPaymentNotFoundException("Pagamento não encontrado: " + id);
+        }
+
+        return statusLogRepository.findByPaymentIdOrderByChangedAtAsc(id)
+                .stream()
+                .map(log -> PixPaymentStatusLogResponse.builder()
+                        .status(log.getStatus())
+                        .source(log.getSource())
+                        .changedAt(log.getChangedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public PixPaymentResponse processWebhook(WebhookRequest request) {
         log.info("Processing webhook for paymentId={}, status={}",
@@ -92,9 +116,23 @@ public class PixPaymentService {
         payment.setUpdatedAt(LocalDateTime.now());
         payment = pixPaymentRepository.save(payment);
 
+        // Registra log do webhook
+        saveStatusLog(payment.getId(), request.getStatus(), "WEBHOOK_CALLBACK");
+
         log.info("Payment status updated via webhook: id={}, status={}",
                 payment.getId(), payment.getStatus());
         return toResponse(payment);
+    }
+
+    public void saveStatusLog(UUID paymentId, PixStatus status, String source) {
+        PixPaymentStatusLog logEntry = PixPaymentStatusLog.builder()
+                .paymentId(paymentId)
+                .status(status)
+                .source(source)
+                .changedAt(LocalDateTime.now())
+                .build();
+        statusLogRepository.save(logEntry);
+        log.info("[STATUS LOG] paymentId={} status={} source={}", paymentId, status, source);
     }
 
     private PixPaymentSummaryResponse toSummaryResponse(PixPayment payment) {

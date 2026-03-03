@@ -2,6 +2,7 @@ package com.elioneto.pixapi.controller;
 
 import com.elioneto.pixapi.dto.CreatePixRequest;
 import com.elioneto.pixapi.dto.PixPaymentResponse;
+import com.elioneto.pixapi.dto.PixPaymentStatusLogResponse;
 import com.elioneto.pixapi.dto.PixPaymentSummaryResponse;
 import com.elioneto.pixapi.model.PixStatus;
 import com.elioneto.pixapi.service.PixPaymentService;
@@ -81,5 +82,24 @@ public class PixPaymentController {
             @Parameter(description = "UUID da transação Pix") @PathVariable UUID id) {
         log.info("GET /pix/payments/{}", id);
         return ResponseEntity.ok(pixPaymentService.getPayment(id));
+    }
+
+    @GetMapping("/{id}/status-logs")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+            summary = "Histórico de status da transação",
+            description = "Retorna o histórico completo de mudanças de status de uma transação Pix em ordem cronológica. " +
+                    "Cada entrada mostra o status, a origem da mudança e o timestamp. " +
+                    "Fontes possíveis: TPP_INITIATION, KAFKA_CONSUMER, SPI_BANCO_CENTRAL, WEBHOOK_CALLBACK."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Histórico retornado com sucesso"),
+            @ApiResponse(responseCode = "404", description = "Pagamento não encontrado"),
+            @ApiResponse(responseCode = "401", description = "Token JWT ausente ou inválido")
+    })
+    public ResponseEntity<List<PixPaymentStatusLogResponse>> getStatusLogs(
+            @Parameter(description = "UUID da transação Pix") @PathVariable UUID id) {
+        log.info("GET /pix/payments/{}/status-logs", id);
+        return ResponseEntity.ok(pixPaymentService.getStatusLogs(id));
     }
 }
