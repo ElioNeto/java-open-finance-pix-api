@@ -52,9 +52,9 @@ public class PixPaymentService {
 
         saveStatusLog(payment.getId(), PixStatus.PENDING, "TPP_INITIATION");
 
-        // Registra Idempotency-Key via RequestContextHolder (sem injetar HttpServletRequest como campo)
+        // Registra Idempotency-Key via RequestContextHolder
         String idempotencyKey = resolveIdempotencyKey();
-        idempotencyInterceptor.registerKeyIfNeeded(idempotencyKey, payment);
+        idempotencyInterceptor.registerKeyIfNeeded(idempotencyKey, payment.getId());
 
         PixEvent event = PixEvent.builder()
                 .paymentId(payment.getId())
