@@ -28,6 +28,18 @@ app:
     secret: ${JWT_SECRET:mySecretKeyForJWTTokenGenerationThatIsLongEnough32Chars}
     expiration: 86400000  # 24h em millisegundos
 
+# Swagger / OpenAPI 3.0
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
+    try-it-out-enabled: true
+    filter: true
+
 management:
   endpoints:
     web:
