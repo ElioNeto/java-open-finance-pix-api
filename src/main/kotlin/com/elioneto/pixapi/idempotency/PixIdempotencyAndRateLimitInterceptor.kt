@@ -14,7 +14,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 @Component
-class PixIdempotencyAndRateLimitInterceptor(
+open class PixIdempotencyAndRateLimitInterceptor(
     private val idempotencyRepository: PixIdempotencyKeyRepository,
     private val pixPaymentRepository: PixPaymentRepository,
     private val objectMapper: ObjectMapper,
