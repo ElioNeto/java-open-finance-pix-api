@@ -2,6 +2,7 @@ package com.elioneto.pixapi.service;
 
 import com.elioneto.pixapi.dto.CreatePixRequest;
 import com.elioneto.pixapi.dto.PixPaymentResponse;
+import com.elioneto.pixapi.dto.PixPaymentSummaryResponse;
 import com.elioneto.pixapi.dto.WebhookRequest;
 import com.elioneto.pixapi.exception.PixPaymentNotFoundException;
 import com.elioneto.pixapi.kafka.PixEvent;
@@ -15,7 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -55,6 +58,20 @@ public class PixPaymentService {
     }
 
     @Transactional(readOnly = true)
+    public List<PixPaymentSummaryResponse> listPayments(PixStatus status) {
+        log.info("Listing Pix payments, status filter={}", status);
+
+        List<PixPayment> payments = (status != null)
+                ? pixPaymentRepository.findByStatusOrderByCreatedAtDesc(status)
+                : pixPaymentRepository.findAllByOrderByCreatedAtDesc();
+
+        log.info("Found {} payments", payments.size());
+        return payments.stream()
+                .map(this::toSummaryResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public PixPaymentResponse getPayment(UUID id) {
         log.info("Fetching Pix payment: id={}", id);
         PixPayment payment = pixPaymentRepository.findById(id)
@@ -78,6 +95,16 @@ public class PixPaymentService {
         log.info("Payment status updated via webhook: id={}, status={}",
                 payment.getId(), payment.getStatus());
         return toResponse(payment);
+    }
+
+    private PixPaymentSummaryResponse toSummaryResponse(PixPayment payment) {
+        return PixPaymentSummaryResponse.builder()
+                .id(payment.getId())
+                .status(payment.getStatus())
+                .amount(payment.getAmount())
+                .pixKey(payment.getPixKey())
+                .createdAt(payment.getCreatedAt())
+                .build();
     }
 
     private PixPaymentResponse toResponse(PixPayment payment) {
