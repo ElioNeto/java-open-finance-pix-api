@@ -54,19 +54,23 @@ public class PixPaymentController {
             @ApiResponse(responseCode = "500", description = "Erro interno ao processar o pagamento")
     })
     public ResponseEntity<PixPaymentResponse> createPayment(
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    required = true,
-                    description = "Dados para criação do pagamento Pix",
-                    content = @Content(schema = @Schema(implementation = CreatePixRequest.class))
-            )
             @Valid @RequestBody CreatePixRequest request,
             @RequestHeader(value = "Idempotency-Key", required = false)
-            @Parameter(description = "Chave idempotente para evitar criação duplicada de pagamentos. Se a mesma chave for reutilizada, a API retorna a mesma transação previamente criada.",
-                    example = "demonstracao-12345") String idempotencyKeyHeader
+            @Parameter(
+                    description = "Chave idempotente para evitar criação duplicada de pagamentos. Se a mesma chave for reutilizada, a API retorna a mesma transação previamente criada.",
+                    example = "demonstracao-12345"
+            )
+            String idempotencyKeyHeader
     ) {
-        log.info("POST /pix/payments - pixKey={}, amount={}, idemKey={}", request.getPixKey(), request.getAmount(), idempotencyKeyHeader);
-        return ResponseEntity.status(HttpStatus.CREATED).body(pixPaymentService.createPayment(request));
+        log.info(
+                "POST /pix/payments - pixKey={}, amount={}, idemKey={}",
+                request.getPixKey(), request.getAmount(), idempotencyKeyHeader
+        );
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(pixPaymentService.createPayment(request));
     }
+
 
     @GetMapping
     @PreAuthorize("hasRole('USER')")
