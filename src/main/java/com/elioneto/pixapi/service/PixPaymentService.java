@@ -6,7 +6,6 @@ import com.elioneto.pixapi.dto.PixPaymentStatusLogResponse;
 import com.elioneto.pixapi.dto.PixPaymentSummaryResponse;
 import com.elioneto.pixapi.dto.WebhookRequest;
 import com.elioneto.pixapi.exception.PixPaymentNotFoundException;
-import com.elioneto.pixapi.idempotency.PixIdempotencyAndRateLimitInterceptor;
 import com.elioneto.pixapi.kafka.PixEvent;
 import com.elioneto.pixapi.kafka.PixPaymentProducer;
 import com.elioneto.pixapi.model.PixPayment;
@@ -14,7 +13,6 @@ import com.elioneto.pixapi.model.PixPaymentStatusLog;
 import com.elioneto.pixapi.model.PixStatus;
 import com.elioneto.pixapi.repository.PixPaymentRepository;
 import com.elioneto.pixapi.repository.PixPaymentStatusLogRepository;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,8 +31,6 @@ public class PixPaymentService {
     private final PixPaymentRepository pixPaymentRepository;
     private final PixPaymentProducer pixPaymentProducer;
     private final PixPaymentStatusLogRepository statusLogRepository;
-    private final HttpServletRequest httpServletRequest;
-    private final PixIdempotencyAndRateLimitInterceptor idempotencyInterceptor;
 
     @Transactional
     public PixPaymentResponse createPayment(CreatePixRequest request) {
@@ -51,9 +47,6 @@ public class PixPaymentService {
         payment = pixPaymentRepository.save(payment);
 
         saveStatusLog(payment.getId(), PixStatus.PENDING, "TPP_INITIATION");
-
-        String idempotencyKey = (String) httpServletRequest.getAttribute("IDEMPOTENCY_KEY");
-        idempotencyInterceptor.registerKeyIfNeeded(idempotencyKey, payment);
 
         PixEvent event = PixEvent.builder()
                 .paymentId(payment.getId())
