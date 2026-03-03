@@ -6,6 +6,7 @@ import com.elioneto.pixapi.dto.PixPaymentStatusLogResponse;
 import com.elioneto.pixapi.dto.PixPaymentSummaryResponse;
 import com.elioneto.pixapi.dto.WebhookRequest;
 import com.elioneto.pixapi.exception.PixPaymentNotFoundException;
+import com.elioneto.pixapi.idempotency.PixIdempotencyAndRateLimitInterceptor;
 import com.elioneto.pixapi.kafka.PixEvent;
 import com.elioneto.pixapi.kafka.PixPaymentProducer;
 import com.elioneto.pixapi.model.PixPayment;
@@ -17,6 +18,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,6 +34,7 @@ public class PixPaymentService {
     private final PixPaymentRepository pixPaymentRepository;
     private final PixPaymentProducer pixPaymentProducer;
     private final PixPaymentStatusLogRepository statusLogRepository;
+    private final PixIdempotencyAndRateLimitInterceptor idempotencyInterceptor;
 
     @Transactional
     public PixPaymentResponse createPayment(CreatePixRequest request) {
@@ -47,6 +51,10 @@ public class PixPaymentService {
         payment = pixPaymentRepository.save(payment);
 
         saveStatusLog(payment.getId(), PixStatus.PENDING, "TPP_INITIATION");
+
+        // Registra Idempotency-Key via RequestContextHolder (sem injetar HttpServletRequest como campo)
+        String idempotencyKey = resolveIdempotencyKey();
+        idempotencyInterceptor.registerKeyIfNeeded(idempotencyKey, payment);
 
         PixEvent event = PixEvent.builder()
                 .paymentId(payment.getId())
@@ -130,6 +138,22 @@ public class PixPaymentService {
                 .build();
         statusLogRepository.save(logEntry);
         log.info("[STATUS LOG] paymentId={} status={} source={}", paymentId, status, source);
+    }
+
+    /**
+     * Lê o atributo IDEMPOTENCY_KEY gravado pelo interceptor Kotlin no request atual.
+     * Usa RequestContextHolder para não precisar injetar HttpServletRequest como campo.
+     */
+    private String resolveIdempotencyKey() {
+        try {
+            ServletRequestAttributes attrs =
+                    (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs == null) return null;
+            return (String) attrs.getRequest().getAttribute("IDEMPOTENCY_KEY");
+        } catch (Exception e) {
+            log.warn("Não foi possível resolver Idempotency-Key: {}", e.getMessage());
+            return null;
+        }
     }
 
     private PixPaymentSummaryResponse toSummaryResponse(PixPayment payment) {
