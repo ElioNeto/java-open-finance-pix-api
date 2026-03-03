@@ -14,8 +14,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
+      interval: 3s  # Verificação mais frequente (era 10s)
+      timeout: 3s
       retries: 5
 
   zookeeper:
@@ -41,8 +41,8 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:29092"]
-      interval: 15s
-      timeout: 10s
+      interval: 5s  # Verificação mais frequente (era 15s)
+      timeout: 5s
       retries: 5
 
   app:
@@ -63,6 +63,21 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+
+    # --- CONFIGURAÇÃO DO WATCH ---
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+          ignore:
+            - node_modules/
+            - target/
+            - bin/
+        - action: rebuild
+          path: ./pom.xml      # Para Java (Maven)
+          # path: ./package.json # Para Node.js
+          # path: ./requirements.txt # Para Python
 
 volumes:
   postgres_data:
